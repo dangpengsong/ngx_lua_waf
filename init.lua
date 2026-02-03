@@ -1,245 +1,178 @@
+-- 缓存全局 API
+local ngx      = ngx
+local ngx_find = ngx.re.find
+local insert   = table.insert
+local lower    = string.lower
+-- 加载配置
 require 'config'
-local match = string.match
-local ngxmatch=ngx.re.match
-local unescape=ngx.unescape_uri
-local get_headers = ngx.req.get_headers
-local optionIsOn = function (options) return options == "on" and true or false end
-logpath = logdir 
-rulepath = RulePath
-UrlDeny = optionIsOn(UrlDeny)
-PostCheck = optionIsOn(postMatch)
-CookieCheck = optionIsOn(cookieMatch)
-WhiteCheck = optionIsOn(whiteModule)
-PathInfoFix = optionIsOn(PathInfoFix)
-attacklog = optionIsOn(attacklog)
-CCDeny = optionIsOn(CCDeny)
-Redirect=optionIsOn(Redirect)
-function getClientIp()
-        IP  = ngx.var.remote_addr 
-        if IP == nil then
-                IP  = "unknown"
-        end
-        return IP
-end
-function write(logfile,msg)
-    local fd = io.open(logfile,"ab")
-    if fd == nil then return end
-    fd:write(msg)
-    fd:flush()
-    fd:close()
-end
-function log(method,url,data,ruletag)
-    if attacklog then
-        local realIp = getClientIp()
-        local ua = ngx.var.http_user_agent
-        local servername=ngx.var.server_name
-        local time=ngx.localtime()
-        if ua  then
-            line = realIp.." ["..time.."] \""..method.." "..servername..url.."\" \""..data.."\"  \""..ua.."\" \""..ruletag.."\"\n"
-        else
-            line = realIp.." ["..time.."] \""..method.." "..servername..url.."\" \""..data.."\" - \""..ruletag.."\"\n"
-        end
-        local filename = logpath..'/'..servername.."_"..ngx.today().."_sec.log"
-        write(filename,line)
+-- 辅助工具:将数组转换为 Hash 表提升查询速度
+local function to_hash(list)
+    local t = {}
+    if list then
+        for _, v in ipairs(list) do t[v] = true end
     end
+    return t
 end
-------------------------------------规则读取函数-------------------------------------------------------------------
-function read_rule(var)
-    file = io.open(rulepath..'/'..var,"r")
-    if file==nil then
-        return
+-- 配置初始化
+local function is_on(opt) return opt == "on" end
+local rule_path     = rulepath
+local log_path      = logdir
+local redirect_on   = is_on(redirect)
+local attack_log_on = is_on(attacklog)
+local white_on      = is_on(white_module)
+local url_deny_on   = is_on(url_deny)
+local cookie_on     = is_on(cookie_match)
+local cc_deny_on    = is_on(cc_deny)
+-- 预转换 IP 列表为 Hash 结构
+local ip_white_hash = to_hash(ipWhitelist)
+local ip_block_hash = to_hash(ipBlocklist)
+-- ---------------------------------------------------------
+-- 内部工具函数
+-- ---------------------------------------------------------
+local function get_client_ip()
+    return ngx.var.remote_addr or "unknown"
+end
+local function write_log(method, url, data, rule_tag)
+    if not attack_log_on then return end
+    local ip      = get_client_ip()
+    local host    = ngx.var.server_name or "localhost"
+    local time    = ngx.localtime()
+    local log_file = string.format("%s/%s_%s_sec.log", log_path, host, ngx.today())
+    local message  = string.format("%s [%s] %s %s%s \"%s\" \"%s\"\n",
+                                   ip, time, method, host, url, data, rule_tag)
+    ngx.timer.at(0, function()
+        local fd = io.open(log_file, "ab")
+        if fd then
+            fd:write(message)
+            fd:close()
+        end
+    end)
+end
+-- 统一拦截入口
+local function do_action(method, url, data, rule)
+    write_log(method, url, data, rule) -- 记录日志
+    if redirect_on then
+        ngx.header.content_type = "text/html"
+        ngx.status = 403 -- 统一返回 403 状态码
+        ngx.say(html or "Blocked by WAF")    -- 输出 config.lua 里的 HTML 变量
+        ngx.exit(ngx.status) -- 终止请求
     end
-    t = {}
+    return true
+end
+local function load_rules(filename)
+    local path = rule_path .. '/' .. filename
+    local file = io.open(path, "r")
+    if not file then return nil end
+    local t = {}
     for line in file:lines() do
-        table.insert(t,line)
+        if line ~= "" then insert(t, line) end
     end
     file:close()
-    return(t)
+    return t
 end
-
-urlrules=read_rule('url')
-argsrules=read_rule('args')
-uarules=read_rule('user-agent')
-wturlrules=read_rule('whiteurl')
-postrules=read_rule('post')
-ckrules=read_rule('cookie')
-
-
-function say_html()
-    if Redirect then
-        ngx.header.content_type = "text/html"
-        ngx.status = ngx.HTTP_FORBIDDEN
-        ngx.say(html)
-        ngx.exit(ngx.status)
+-- 规则库
+local rules = {
+    url   = load_rules('url'),
+    args  = load_rules('args'),
+    ua    = load_rules('user-agent'),
+    white = load_rules('whiteurl'),
+    post  = load_rules('post'),
+    ck    = load_rules('cookie')
+}
+-- ---------------------------------------------------------
+-- 导出给 waf.lua 使用的检测模块
+-- ---------------------------------------------------------
+function check_ip_white()
+    return ip_white_hash[get_client_ip()]
+end
+function check_ip_block()
+    if ip_block_hash[get_client_ip()] then
+        return do_action('IP', ngx.var.request_uri, "-", "IP Blocklist Match")
     end
+    return false
 end
-
-function whiteurl()
-    if WhiteCheck then
-        if wturlrules ~=nil then
-            for _,rule in pairs(wturlrules) do
-                if ngxmatch(ngx.var.uri,rule,"isjo") then
-                    return true 
-                 end
-            end
+function check_white_url()
+    if white_on and rules.white then
+        for _, rule in ipairs(rules.white) do
+            if ngx_find(ngx.var.uri, rule, "isjo") then return true end
         end
     end
     return false
 end
-function fileExtCheck(ext)
-    local items = Set(black_fileExt)
-    ext=string.lower(ext)
-    if ext then
-        for rule in pairs(items) do
-            if ngx.re.match(ext,rule,"isjo") then
-	        log('POST',ngx.var.request_uri,"-","file attack with ext "..ext)
-            say_html()
-            end
-        end
+function check_cc()
+    if not cc_deny_on then return false end
+    local limit = ngx.shared.limit
+    if not limit then return false end
+    local count, sec = string.match(cc_rate, "(%d+)/(%d+)")
+    local token = get_client_ip() .. ngx.var.uri
+    local req, _ = limit:get(token)
+    if req and req > tonumber(count) then
+        return do_action('CC', ngx.var.request_uri, "-", "CC Attack: "..count.."req/"..sec.."s")
+    elseif req then
+        limit:incr(token, 1)
+    else
+        limit:set(token, 1, tonumber(sec))
     end
     return false
 end
-function Set (list)
-  local set = {}
-  for _, l in ipairs(list) do set[l] = true end
-  return set
-end
-function args()
-    for _,rule in pairs(argsrules) do
-        local args = ngx.req.get_uri_args()
-        for key, val in pairs(args) do
-            if type(val)=='table' then
-                 local t={}
-                 for k,v in pairs(val) do
-                    if v == true then
-                        v=""
-                    end
-                    table.insert(t,v)
-                end
-                data=table.concat(t, " ")
-            else
-                data=val
-            end
-            if data and type(data) ~= "boolean" and rule ~="" and ngxmatch(unescape(data),rule,"isjo") then
-                log('GET',ngx.var.request_uri,"-",rule)
-                say_html()
-                return true
-            end
-        end
-    end
-    return false
-end
-
-
-function url()
-    if UrlDeny then
-        for _,rule in pairs(urlrules) do
-            if rule ~="" and ngxmatch(ngx.var.request_uri,rule,"isjo") then
-                log('GET',ngx.var.request_uri,"-",rule)
-                say_html()
-                return true
-            end
-        end
-    end
-    return false
-end
-
-function ua()
+function check_ua()
     local ua = ngx.var.http_user_agent
-    if ua ~= nil then
-        for _,rule in pairs(uarules) do
-            if rule ~="" and ngxmatch(ua,rule,"isjo") then
-                log('UA',ngx.var.request_uri,"-",rule)
-                say_html()
-            return true
+    if ua and rules.ua then
+        for _, rule in ipairs(rules.ua) do
+            if ngx_find(ua, rule, "isjo") then
+                return do_action('UA', ngx.var.request_uri, "-", rule)
             end
         end
     end
-    return false
 end
-function body(data)
-    for _,rule in pairs(postrules) do
-        if rule ~="" and data~="" and ngxmatch(unescape(data),rule,"isjo") then
-            log('POST',ngx.var.request_uri,data,rule)
-            say_html()
-            return true
+function check_url()
+    if url_deny_on and rules.url then
+        for _, rule in ipairs(rules.url) do
+            if ngx_find(ngx.var.request_uri, rule, "isjo") then
+                return do_action('GET', ngx.var.request_uri, "-", rule)
+            end
         end
     end
-    return false
 end
-function cookie()
+function check_args()
+    local query_args = ngx.req.get_uri_args()
+    if not query_args or not rules.args then return false end
+    for _, rule in ipairs(rules.args) do
+        for _, val in pairs(query_args) do
+            local data = type(val) == "table" and table.concat(val, " ") or val
+            if data and data ~= true then
+                if ngx_find(ngx.unescape_uri(data), rule, "isjo") then
+                    return do_action('GET', ngx.var.request_uri, "-", rule)
+                end
+            end
+        end
+    end
+end
+function check_cookie()
     local ck = ngx.var.http_cookie
-    if CookieCheck and ck then
-        for _,rule in pairs(ckrules) do
-            if rule ~="" and ngxmatch(ck,rule,"isjo") then
-                log('Cookie',ngx.var.request_uri,"-",rule)
-                say_html()
-            return true
+    if cookie_on and ck and rules.ck then
+        for _, rule in ipairs(rules.ck) do
+            if ngx_find(ck, rule, "isjo") then
+                return do_action('Cookie', ngx.var.request_uri, "-", rule)
+            end
+        end
+    end
+end
+function check_body(data)
+    if rules.post and data ~= "" then
+        for _, rule in ipairs(rules.post) do
+            if ngx_find(ngx.unescape_uri(data), rule, "isjo") then
+                return do_action('POST', ngx.var.request_uri, "-", rule)
             end
         end
     end
     return false
 end
-
-function denycc()
-    if CCDeny then
-        local uri=ngx.var.uri
-        CCcount=tonumber(string.match(CCrate,'(.*)/'))
-        CCseconds=tonumber(string.match(CCrate,'/(.*)'))
-        local token = getClientIp()..uri
-        local limit = ngx.shared.limit
-        local req,_=limit:get(token)
-        if req then
-            if req > CCcount then
-                 ngx.exit(503)
-                return true
-            else
-                 limit:incr(token,1)
-            end
-        else
-            limit:set(token,1,CCseconds)
+function check_file_ext(ext)
+    if not ext then return false end
+    for _, rule in ipairs(black_fileext) do
+        if ngx_find(lower(ext), rule, "isjo") then
+            return do_action('POST', ngx.var.request_uri, "-", "File Ext Attack: "..ext)
         end
     end
-    return false
-end
-
-function get_boundary()
-    local header = get_headers()["content-type"]
-    if not header then
-        return nil
-    end
-
-    if type(header) == "table" then
-        header = header[1]
-    end
-
-    local m = match(header, ";%s*boundary=\"([^\"]+)\"")
-    if m then
-        return m
-    end
-
-    return match(header, ";%s*boundary=([^\",;]+)")
-end
-
-function whiteip()
-    if next(ipWhitelist) ~= nil then
-        for _,ip in pairs(ipWhitelist) do
-            if getClientIp()==ip then
-                return true
-            end
-        end
-    end
-        return false
-end
-
-function blockip()
-     if next(ipBlocklist) ~= nil then
-         for _,ip in pairs(ipBlocklist) do
-             if getClientIp()==ip then
-                 ngx.exit(403)
-                 return true
-             end
-         end
-     end
-         return false
 end

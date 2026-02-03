@@ -1,88 +1,61 @@
-local content_length=tonumber(ngx.req.get_headers()['content-length'])
-local method=ngx.req.get_method()
-local ngxmatch=ngx.re.match
-if whiteip() then
-elseif blockip() then
-elseif denycc() then
-elseif ngx.var.http_Acunetix_Aspect then
-    ngx.exit(444)
-elseif ngx.var.http_X_Scan_Memo then
-    ngx.exit(444)
-elseif whiteurl() then
-elseif ua() then
-elseif url() then
-elseif args() then
-elseif cookie() then
-elseif PostCheck then
-    if method=="POST" then   
-            local boundary = get_boundary()
-	    if boundary then
-	    local len = string.len
-            local sock, err = ngx.req.socket()
-    	    if not sock then
-					return
-            end
-	    ngx.req.init_body(128 * 1024)
-            sock:settimeout(0)
-	    local content_length = nil
-    	    content_length=tonumber(ngx.req.get_headers()['content-length'])
-    	    local chunk_size = 4096
-            if content_length < chunk_size then
-					chunk_size = content_length
-	    end
-            local size = 0
-	    while size < content_length do
-		local data, err, partial = sock:receive(chunk_size)
-		data = data or partial
-		if not data then
-			return
-		end
-		ngx.req.append_body(data)
-        	if body(data) then
-	   	        return true
-    	    	end
-		size = size + len(data)
-		local m = ngxmatch(data,[[Content-Disposition: form-data;(.+)filename="(.+)\\.(.*)"]],'ijo')
-        	if m then
-            		fileExtCheck(m[3])
-            		filetranslate = true
-        	else
-            		if ngxmatch(data,"Content-Disposition:",'isjo') then
-                		filetranslate = false
-            		end
-            		if filetranslate==false then
-            			if body(data) then
-                    			return true
-                		end
-            		end
-        	end
-		local less = content_length - size
-		if less < chunk_size then
-			chunk_size = less
-		end
-	 end
-	 ngx.req.finish_body()
-    else
-			ngx.req.read_body()
-			local args = ngx.req.get_post_args()
-			if not args then
-				return
-			end
-			for key, val in pairs(args) do
-				if type(val) == "table" then
-					if type(val[1]) == "boolean" then
-						return
-					end
-					data=table.concat(val, ", ")
-				else
-					data=val
-				end
-				if data and type(data) ~= "boolean" and body(data) then
-                			body(key)
-				end
-			end
-		end
-    end
-else
+local var = ngx.var
+local req = ngx.req
+-- 1. IP 级别防护(最高优先级)
+if check_ip_white() then return end
+if check_ip_block() then return end
+-- 2. 基础识别与 CC 防护
+if check_white_url() then return end
+if check_cc() then return end
+-- 3. 扫描器指纹硬拦截
+if var.http_Acunetix_Aspect or var.http_X_Scan_Memo then
+    return do_action('SCANNER', var.request_uri, "-", "Scanner Fingerprint")
+end
+-- 4. 静态特征检测 (UA/URL/Args/Cookie)
+if check_ua() or check_url() or check_args() or check_cookie() then
     return
+end
+-- 5. POST 深度检测 (逻辑规范化)
+if post_match == "on" and req.get_method() == "POST" then
+    local content_type = var.content_type or ""
+    -- Multipart 分块处理
+    if string.find(content_type, "multipart/form-data", 1, true) then
+        local sock, err = req.socket()
+        if not sock then return end
+        req.init_body(128 * 1024)
+        local total_len = tonumber(var.content_length) or 0
+        local size, file_found = 0, false
+        while size < total_len do
+            local chunk_size = math.min(4096, total_len - size)
+            local data, _, partial = sock:receive(chunk_size)
+            data = data or partial
+            if not data then break end
+            req.append_body(data)
+            size = size + #data
+            -- 正文注入检测
+            if check_body(data) then return end
+            -- 文件后缀检测状态机
+            if not file_found then
+                local ext = string.match(data, [[filename=".-%.([^%.%s]+)"]])
+                if ext then
+                    check_file_ext(ext)
+                    file_found = true
+                end
+            end
+        end
+        req.finish_body()
+    -- 普通表单处理
+    else
+        req.read_body()
+        local post_args = req.get_post_args()
+        if post_args then
+            for key, val in pairs(post_args) do
+                -- 先检测参数名,再检测参数值
+                if check_body(key) then return end
+                local data = type(val) == "table" and table.concat(val, ", ") or val
+                if data and data ~= true then
+                    if check_body(data) then return end
+                end
+            end
+        end
+    end
 end
