@@ -1,20 +1,31 @@
+# --- 目录遍历与敏感路径 ---
 \.\./
+etc/(passwd|shadow|group|hosts)
+# --- SQL 注入 (针对 Cookie 注入进行了边界加固) ---
+\b(select|insert|update|delete|drop|alter|truncate|create)\b.+\b(from|into|table|database|limit)\b
+\bunion\b.*\bselect\b
+\bhaving\b\s+(1=1|1=2)
+\b(order|group)\s+by\b.+\(
+\bextractvalue|updatexml\b
+# 常见的十六进制 SQL 注入特征
+\b0x[0-9a-fA-F]+\b
+# --- 盲注与延时攻击 (Cookie 延时注入很常见) ---
+\bsleep\(\d+\)
+\bbenchmark\([\d\w\s\,]+\)
+\bwaitfor\b\s+delay\b
+# --- 代码执行与反序列化攻击 (重点补充) ---
+\b(base64_decode|eval|system|passthru|shell_exec|exec|phpinfo|popen|assert|preg_replace)\b\s*\(
+\b(file_get_contents|include|require|require_once|file_put_contents)\b\s*\(
+# 针对 Lua/Java/Python 等反序列化特征
+\b(os\.execute|io\.popen|java\.lang|Runtime\.getRuntime|subprocess\.Popen)\b
+\$_(GET|POST|COOKIE|FILES|SESSION|ENV|SERVER|GLOBALS)\[
+# --- 信息泄露 ---
+\bfrom\W+information_schema\W
+\b(current_user|database|schema|connection_id|version|user)\s*\(
+# --- 特殊符号注入 (防止 Cookie 解析器漏洞) ---
 \:\$
 \$\{
-select.+(from|limit)
-(?:(union(.*?)select))
-having|rongjitest
-sleep\((\s*)(\d*)(\s*)\)
-benchmark\((.*)\,(.*)\)
-base64_decode\(
-(?:from\W+information_schema\W)
-(?:(?:current_)user|database|schema|connection_id)\s*\(
-(?:etc\/\W*passwd)
-into(\s+)+(?:dump|out)file\s*
-group\s+by.+\(
-xwork.MethodAccessor
-(?:define|eval|file_get_contents|include|require|require_once|shell_exec|phpinfo|system|passthru|preg_\w+|execute|echo|print|print_r|var_dump|(fp)open|alert|showmodaldialog)\(
-xwork\.MethodAccessor
-(gopher|doc|php|glob|file|phar|zlib|ftp|ldap|dict|ogg|data)\:\/
-java\.lang
-\$_(GET|post|cookie|files|session|env|phplib|GLOBALS|SERVER)\[
+# --- Log4j JNDI 注入 ---
+\$\{.*jndi\s*:
+\$\{.*ldap\s*:
+\$\{.*rmi\s*:

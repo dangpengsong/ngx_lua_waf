@@ -1,22 +1,62 @@
+# --- 遍历与路径攻击 ---
 \.\./
-\:\$
-\$\{
-select.+(from|limit)
-(?:(union(.*?)select))
-having|rongjitest
-sleep\((\s*)(\d*)(\s*)\)
-benchmark\((.*)\,(.*)\)
-base64_decode\(
-(?:from\W+information_schema\W)
-(?:(?:current_)user|database|schema|connection_id)\s*\(
-(?:etc\/\W*passwd)
-into(\s+)+(?:dump|out)file\s*
-group\s+by.+\(
-xwork.MethodAccessor
-(?:define|eval|file_get_contents|include|require|require_once|shell_exec|phpinfo|system|passthru|preg_\w+|execute|echo|print|print_r|var_dump|(fp)open|alert|showmodaldialog)\(
-xwork\.MethodAccessor
-(gopher|doc|php|glob|file|phar|zlib|ftp|ldap|dict|ogg|data)\:\/
-java\.lang
-\$_(GET|post|cookie|files|session|env|phplib|GLOBALS|SERVER)\[
-\<(iframe|script|body|img|layer|div|meta|style|base|object|input)
-(onmouseover|onerror|onload)\=
+etc/(passwd|shadow|group|hosts)
+# --- SQL 注入优化 (增加单词边界 \b 防止误报) ---
+\b(select|insert|update|delete|drop|alter|truncate|create)\b.+\b(from|into|table|database|limit)\b
+\bunion\b.*\bselect\b
+\bhaving\b\s+(1=1|1=2)
+\b(order|group)\s+by\b.+\(
+\bextractvalue|updatexml\b
+# 简化版 UNION SELECT
+\bunion\s+select\b
+# 单引号 + UNION
+'\s*union\s
+# --- 盲注与延时攻击 ---
+\bsleep\(\d+\)
+\bbenchmark\([\d\w\s\,]+\)
+\bwaitfor\b\s+delay\b
+# --- 跨站脚本 XSS (增强型) ---
+<(iframe|script|body|img|layer|div|meta|style|base|object|input|svg|details|video|audio|embed|form)
+\bon\w+\s*=
+javascript\s*:
+# img 标签事件
+<img[^>]+on\w+\s*=
+# --- 远程代码执行 RCE ---
+\b(base64_decode|eval|system|passthru|shell_exec|exec|phpinfo|popen|assert|preg_replace)\b\s*\(
+\b(file_get_contents|include|require|require_once|file_put_contents)\b\s*\(
+\$_(GET|POST|COOKIE|FILES|SESSION|ENV|SERVER|GLOBALS)\[
+# --- 协议伪造与 SSRF ---
+(gopher|doc|php|glob|file|phar|zlib|ftp|ldap|dict|ogg|data)\://
+# SSRF 内网地址检测
+http://(127\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)
+http://localhost
+http://0\.0\.0\.0
+http://\[::1\]
+# --- 信息泄露 ---
+\bfrom\W+information_schema\W
+\b(current_user|database|schema|connection_id|version|user)\s*\(
+# --- Java 反序列化与 Struts2 漏洞 ---
+\bxwork\.MethodAccessor
+java\.lang\.(Runtime|ProcessBuilder)
+# --- Log4j JNDI 注入 (CVE-2021-44228) ---
+\$\{.*jndi\s*:
+\$\{.*ldap\s*:
+\$\{.*rmi\s*:
+\$\{.*dns\s*:
+\$\{.*iiop\s*:
+# Log4j 变形绕过
+\$\{.*\$\{.*lower.*\}.*\}
+\$\{.*env\s*:
+\$\{.*sys\s*:
+# --- 十六进制编码绕过 ---
+0x[0-9a-fA-F]{8,}
+# --- 命令注入 ---
+[;|`]\s*(cat|ls|id|whoami|pwd|uname|wget|curl|nc|bash|sh)\b
+\b(cat|head|tail|more|less)\s+/etc/
+# 命令执行特征
+;\s*\w+\s+/
+# --- 环境变量注入 ---
+\benv\s*&&
+\bset\s*&&
+\benv\b.*\bcat\b
+&&\s*(cat|ls|id|whoami|wget|curl)

@@ -1,1 +1,22 @@
-(HTTrack|harvest|audit|dirbuster|pangolin|nmap|sqln|-scan|hydra|Parser|libwww|BBBike|sqlmap|w3af|owasp|Nikto|fimap|havij|PycURL|zmeu|BabyKrokodil|netsparker|httperf|bench| SF/)
+# --- 自动化漏洞扫描器 (加固并补充) ---
+\b(sqlmap|nmap|nikto|w3af|netsparker|hydra|dirbuster|pangolin|havij|fimap|owasp|acunetix|zmeu|nessus|openvas|burpsuite|vega|masscan|zmap|gobuster|ffuf|wfuzz|nuclei|xray|afrog)\b
+# --- 自动化脚本库 (防止恶意脚本抓取/发包) ---
+\b(libwww|PycURL|python-requests|aiohttp|go-http-client|java/|faraday|httperf|bench|curl/|wget/|http_request|php/|ruby|perl|got/|axios|node-fetch|scrapy|mechanize|httpx)\b
+# --- 爬虫与镜像工具 ---
+\b(HTTrack|harvest|audit|BBBike|webmeup|spiderman|heritrix|teleport|webcopier|siteSucker|webzip)\b
+# --- 常见的后门与恶意指纹 ---
+\b(BabyKrokodil|morfeus|shell|cgi-bin|sh|bash|powershell|webshell)\b
+# --- 现代 Headless 浏览器 (针对自动化爬虫) ---
+\b(headless|selenium|webdriver|playwright|puppeteer|phantomjs|nightmare|zombie)\b
+# --- 空 UA 或异常短 UA ---
+^.{0,10}$
+# --- 特殊特征匹配 ---
+-scan
+\bSF/
+\bParser\b
+# --- AI/机器人特征 ---
+\b(bot|crawl|spider|slurp)\b.*\b(evil|bad|attack)\b
+# --- Log4j JNDI 注入 (UA头注入) ---
+\$\{.*jndi\s*:
+\$\{.*ldap\s*:
+\$\{.*rmi\s*:

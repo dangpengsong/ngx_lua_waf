@@ -1,138 +1,191 @@
-##ngx_lua_waf
+# ngx_lua_waf
 
-ngx_lua_waf是我刚入职趣游时候开发的一个基于ngx_lua的web应用防火墙。
+基于 OpenResty (ngx_lua) 的高性能 Web 应用防火墙，采用 Lua 脚本实现请求过滤与安全防护。
 
-代码很简单，开发初衷主要是使用简单，高性能和轻量级。
+---
 
-现在开源出来，遵从MIT许可协议。其中包含我们的过滤规则。如果大家有什么建议和想fa，欢迎和我一起完善。
+## 核心防护能力
 
-###用途：
-    	
-	防止sql注入，本地包含，部分溢出，fuzzing测试，xss,SSRF等web攻击
-	防止svn/备份之类文件泄漏
-	防止ApacheBench之类压力测试工具的攻击
-	屏蔽常见的扫描黑客工具，扫描器
-	屏蔽异常的网络请求
-	屏蔽图片附件类目录php执行权限
-	防止webshell上传
+| 防护类型 | 说明 |
+|---------|------|
+| **SQL 注入** | 拦截 Union/报错注入/盲注/时间延迟注入等多种攻击方式 |
+| **XSS 攻击** | 检测 Script/事件处理器/JavaScript 伪协议等跨站脚本 |
+| **远程代码执行** | 拦截 PHP/Java/Python 等危险函数调用与反序列化攻击 |
+| **目录遍历** | 阻止 `../` 路径穿越和敏感文件读取 |
+| **文件上传** | 屏蔽 php/jsp/asp/exe/sh 等危险后缀文件上传 |
+| **SSRF 攻击** | 拦截 gopher/file/dict/ldap 等协议伪造请求 |
+| **扫描器识别** | 检测 sqlmap/nmap/nikto/nuclei 等安全工具特征 |
+| **CC 攻击** | 基于 IP+URI 的请求频率限制 |
+| **信息泄露** | 拦截 .git/.svn/备份文件/敏感配置 等路径访问 |
 
-###推荐安装:
+---
 
-推荐使用lujit2.1做lua支持
+## 功能模块架构
 
-ngx_lua如果是0.9.2以上版本，建议正则过滤函数改为ngx.re.find，匹配效率会提高三倍左右。
+```
+请求入口
+    │
+    ▼
+┌─────────────────┐
+│  IP 白名单检测   │ ─── 命中 ──→ 放行
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  IP 黑名单检测   │ ─── 命中 ──→ 拦截(403)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  URL 白名单检测  │ ─── 命中 ──→ 放行
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   CC 频率限制    │ ─── 超限 ──→ 拦截(403)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ HTTP 方法/Host校验│ ─── 异常 ──→ 拦截(403)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  扫描器指纹检测   │ ─── 命中 ──→ 拦截(403)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  静态特征检测    │  UA / URL / Args / Cookie / Headers / Referer
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  POST 深度检测   │  表单参数 / Multipart 文件上传
+└────────┬────────┘
+         │
+         ▼
+      放行请求
+```
 
+---
 
-###使用说明：
+## 运行环境要求
 
-nginx安装路径假设为:/usr/local/nginx/conf/
+| 组件 | 版本要求 |
+|------|---------|
+| OpenResty / Nginx | 支持 ngx_lua 模块 |
+| ngx_lua | ≥ 0.9.2（推荐使用 `ngx.re.find` 提升性能） |
+| LuaJIT | 2.1（非标准 Lua 解释器） |
 
-把ngx_lua_waf下载到conf目录下,解压命名为waf
+---
 
-在nginx.conf的http段添加
+## 部署配置
 
-		lua_package_path "/usr/local/nginx/conf/waf/?.lua";
-        lua_shared_dict limit 10m;
-        init_by_lua_file  /usr/local/nginx/conf/waf/init.lua; 
-    	access_by_lua_file /usr/local/nginx/conf/waf/waf.lua;
+### 目录结构
 
-配置config.lua里的waf规则目录(一般在waf/conf/目录下)
+```
+waf/
+├── config.lua      # 核心配置文件
+├── init.lua        # 初始化与规则加载
+├── waf.lua         # 请求过滤主逻辑
+└── wafconf/        # 规则目录
+    ├── args        # GET 参数过滤规则
+    ├── url         # URL 路径过滤规则
+    ├── post        # POST 数据过滤规则
+    ├── cookie      # Cookie 过滤规则
+    ├── user-agent  # User-Agent 过滤规则
+    └── whiteurl    # URL 白名单规则
+```
 
-        RulePath = "/usr/local/nginx/conf/waf/wafconf/"
+### Nginx 配置要点
 
-绝对路径如有变动，需对应修改
+在 `nginx.conf` 的 `http` 段添加以下指令：
 
-然后重启nginx即可
+| 指令 | 用途 |
+|------|------|
+| `lua_package_path` | 指定 Lua 脚本搜索路径 |
+| `lua_shared_dict limit 10m` | CC 防护计数器共享内存（必须配置） |
+| `init_by_lua_file` | 加载 init.lua 进行规则预热 |
+| `access_by_lua_file` | 加载 waf.lua 执行请求过滤 |
 
+### 关键配置项说明
 
-###配置文件详细说明：
+| 配置项 | 类型 | 说明 |
+|--------|------|------|
+| `rulepath` | 路径 | 规则文件目录（确保末尾带斜杠） |
+| `logdir` | 路径 | 攻击日志存储目录（需 nginx 用户可写） |
+| `attacklog` | on/off | 是否记录攻击日志 |
+| `url_deny` | on/off | 是否开启 URL 过滤 |
+| `cookie_match` | on/off | 是否开启 Cookie 过滤 |
+| `post_match` | on/off | 是否开启 POST 过滤 |
+| `cc_deny` | on/off | 是否开启 CC 防护 |
+| `cc_rate` | 格式 | 频率限制（如 `100/60` = 60秒内100次） |
+| `ipWhitelist` | 数组 | IP 白名单列表 |
+| `ipBlocklist` | 数组 | IP 黑名单列表 |
+| `black_fileext` | 数组 | 禁止上传的文件后缀 |
 
-    	RulePath = "/usr/local/nginx/conf/waf/wafconf/"
-        --规则存放目录
-        attacklog = "off"
-        --是否开启攻击信息记录，需要配置logdir
-        logdir = "/usr/local/nginx/logs/hack/"
-        --log存储目录，该目录需要用户自己新建，切需要nginx用户的可写权限
-        UrlDeny="on"
-        --是否拦截url访问
-        Redirect="on"
-        --是否拦截后重定向
-        CookieMatch = "on"
-        --是否拦截cookie攻击
-        postMatch = "on" 
-        --是否拦截post攻击
-        whiteModule = "on" 
-        --是否开启URL白名单
-        black_fileExt={"php","jsp"}
-        --填写不允许上传文件后缀类型
-        ipWhitelist={"127.0.0.1"}
-        --ip白名单，多个ip用逗号分隔
-        ipBlocklist={"1.0.0.1"}
-        --ip黑名单，多个ip用逗号分隔
-        CCDeny="on"
-        --是否开启拦截cc攻击(需要nginx.conf的http段增加lua_shared_dict limit 10m;)
-        CCrate = "100/60"
-        --设置cc攻击频率，单位为秒.
-        --默认1分钟同一个IP只能请求同一个地址100次
-        html=[[Please go away~~]]
-        --警告内容,可在中括号内自定义
-        备注:不要乱动双引号，区分大小写
-        
-###检查规则是否生效
+---
 
-部署完毕可以尝试如下命令：        
-  
-        curl http://xxxx/test.php?id=../etc/passwd
-        返回"Please go away~~"字样，说明规则生效。
+## 规则文件格式
 
-注意:默认，本机在白名单不过滤，可自行调整config.lua配置
+- 每行一条正则表达式规则
+- 以 `#` 开头的行为注释，自动忽略
+- 空行自动跳过
+- 正则语法遵循 PCRE 标准（支持 `\b` 单词边界、`(?i)` 忽略大小写等）
 
+---
 
-###效果图如下：
+## 日志格式
 
-![sec](http://i.imgur.com/wTgOcm2.png)
+攻击日志文件名：`{虚拟主机名}_{日期}_sec.log`
 
-![sec](http://i.imgur.com/DqU30au.png)
+日志字段：
+```
+IP [时间] 攻击类型 主机名+URI "触发数据" "匹配规则" "User-Agent"
+```
 
-###规则更新：
+攻击类型标识：
+- `IP` - IP 黑名单命中
+- `CC` - CC 攻击触发
+- `UA` - User-Agent 异常
+- `URL` - URL 规则命中
+- `Cookie` - Cookie 注入
+- `UPLOAD` - 危险文件上传
+- `SCANNER` - 扫描器指纹
+- `METHOD` - 异常 HTTP 方法
+- `HOST` - Host 头异常
 
-考虑到正则的缓存问题，动态规则会影响性能，所以暂没用共享内存字典和redis之类东西做动态管理。
+---
 
-规则更新可以把规则文件放置到其他服务器，通过crontab任务定时下载来更新规则，nginx reload即可生效。以保障ngx lua waf的高性能。
+## 验证部署
 
-只记录过滤日志，不开启过滤，在代码里在check前面加上--注释即可，如果需要过滤，反之
+部署完成后，可通过以下方式验证规则是否生效：
 
-###一些说明：
+1. **SQL 注入测试**：访问包含 `union select` 的 URL
+2. **路径遍历测试**：访问包含 `../etc/passwd` 的 URL
+3. **扫描器测试**：使用 sqlmap 等工具发起请求
 
-	过滤规则在wafconf下，可根据需求自行调整，每条规则需换行,或者用|分割
-	
-		args里面的规则get参数进行过滤的
-		url是只在get请求url过滤的规则		
-		post是只在post请求过滤的规则		
-		whitelist是白名单，里面的url匹配到不做过滤		
-		user-agent是对user-agent的过滤规则
-	
+成功拦截时将返回 403 状态码及自定义拦截页面。
 
-	默认开启了get和post过滤，需要开启cookie过滤的，编辑waf.lua取消部分--注释即可
-	
-	日志文件名称格式如下:虚拟主机名_sec.log
+> 注意：本机 IP（127.0.0.1）默认在白名单中，不会触发过滤。
 
+---
 
-## Copyright
+## 性能优化建议
 
-<table>
-  <tr>
-    <td>Weibo</td><td>神奇的魔法师</td>
-  </tr>
-  <tr>
-    <td>Forum</td><td>http://bbs.linuxtone.org/</td>
-  </tr>
-  <tr>
-    <td>Copyright</td><td>Copyright (c) 2013- loveshell</td>
-  </tr>
-  <tr>
-    <td>License</td><td>MIT License</td>
-  </tr>
-</table>
-	
-感谢ngx_lua模块的开发者[@agentzh](https://github.com/agentzh/),春哥是我所接触过开源精神最好的人
+| 优化点 | 说明 |
+|--------|------|
+| 使用 LuaJIT 2.1 | 相比标准 Lua 性能提升显著 |
+| 规则预编译 | 规则在 init 阶段加载，运行时无 IO 开销 |
+| IP 列表 Hash 化 | IP 白/黑名单使用 Hash 表 O(1) 查询 |
+| 异步日志写入 | 使用 `ngx.timer.at` 异步写日志，不阻塞请求 |
+| 共享内存计数 | CC 防护使用 `lua_shared_dict` 高效计数 |
+
+---
+
+## 许可协议
+
+MIT License
+

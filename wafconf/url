@@ -1,6 +1,21 @@
-\.(svn|htaccess|bash_history)
-\.(bak|inc|old|mdb|sql|backup|java|class)$
-(vhost|bbs|host|wwwroot|www|site|root|hytop|flashfxp).*\.rar
-(phpmyadmin|jmx-console|jmxinvokerservlet)
+# --- 1. 源码管理与系统隐藏文件 ---
+\.(git|svn|hg|bzr|htaccess|bash_history|DS_Store|env)\b
+# --- 2. 敏感备份,数据库与配置文件 (整合完善) ---
+\.(bak|inc|old|mdb|sql|backup|java|class|conf|config|ini|log|tmp)$
+# 拦截针对整站备份的扫描 (如 www.rar, site.zip)
+\b(vhost|bbs|host|wwwroot|www|site|root|hytop|flashfxp|web|data)\b.*\.rar
+# --- 3. 静态资源目录下的脚本执行 (核心加固:防止上传漏洞后的执行) ---
+/(attachments|upimg|images|css|uploadfiles|html|uploads|templets|static|template|data|inc|forumdata|upload|includes|cache|avatar)/.+\.(php|jsp|asp|aspx|cgi|sh|py)
+# --- 4. 常见后端管理端点与 Spring Boot 泄露 ---
+\b(phpmyadmin|pma|jmx-console|jmxinvokerservlet|actuator|configprops|heapdump|env|loggers)\b
+\b(web-inf|meta-inf|invoker)\b
+# --- 5. SQL 注入与命令注入 (路径参数) ---
+\b(select|union|having|insert|update|delete|drop)\b
+\b(extractvalue|updatexml|sleep|benchmark)\b
+\b(cmd|shell|sh|bash|powershell)\.(php|jsp|asp)\b
+# --- 6. 协议伪造与代码特征 ---
+(gopher|doc|php|glob|file|phar|zlib|ftp|ldap|dict|ogg|data)\://
 java\.lang
-/(attachments|upimg|images|css|uploadfiles|html|uploads|templets|static|template|data|inc|forumdata|upload|includes|cache|avatar)/(\\w+).(php|jsp)
+# --- 7. 畸形字符与编码绕过 ---
+# 注意：只拦截明显的攻击特征，避免对正常URL误报
+\x[0-9a-fA-F]{2}

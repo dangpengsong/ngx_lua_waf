@@ -150,14 +150,13 @@ html = [[
         <h1>请求被安全防护系统拦截</h1>
         <div class="message">
             检测到您的请求中包含潜在的安全威胁,系统已自动拦截.
-            这可能是因为请求中包含了恶意代码,非法参数或其他可疑内容.
         </div>
         <div class="message">
             如果您认为这是误判,请联系网站管理员.
             请确保您的请求符合安全规范,不要尝试绕过安全防护.
         </div>
         <div class="footer">
-            <p>安全防护系统 | Web Application Firewall</p>
+            <p>waf</p>
         </div>
     </div>
 </body>
