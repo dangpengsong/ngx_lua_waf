@@ -7,13 +7,6 @@
 ^/(css|js|images|static|assets|fonts|media)/
 \.(css|js|jpg|jpeg|png|gif|ico|svg|woff|woff2|ttf|eot|mp4|mp3|webp)(\?.*)?$
 
-# --- 健康检查与监控端点 ---
-^/health/?$
-^/ping/?$
-^/status/?$
-^/ready/?$
-^/live/?$
-
 # --- 常见 API 白名单示例 (根据实际业务按需开启) ---
 # ^/api/v1/public/
 # ^/api/webhook/
