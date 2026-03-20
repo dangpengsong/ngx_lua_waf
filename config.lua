@@ -3,9 +3,11 @@
 -- 建议:修改路径后请确保 Nginx 运行用户(如 www-data)拥有读写权限
 -- =============================================================================
 -- 规则存放目录 (确保末尾带有斜杠)
-rulepath = "/usr/local/openresty/nginx/conf/waf/wafconf/"
+-- rulepath = "/usr/local/openresty/nginx/conf/waf/wafconf/"
+rulepath = "D:/openresty-1.27.1.2-win64/conf/waf/wafconf/"
 -- 日志存储目录 (必须存在且可写,用于存放 hack 记录)
-logdir = "/usr/local/openresty/nginx/logs/hack/"
+-- logdir = "/usr/local/openresty/nginx/logs/hack/"
+logdir = "D:/openresty-1.27.1.2-win64/logs/hack/"
 -- ---------------------------------------------------------
 -- 功能开关 ("on" 为开启, "off" 为关闭)
 -- ---------------------------------------------------------
@@ -22,9 +24,11 @@ cc_deny      = "on"    -- 是否开启 CC 攻击防护
 -- 不允许上传的文件后缀
 black_fileext = {"php", "jsp", "asp", "exe", "sh"}
 -- IP 白名单 (Hash 匹配,优先级最高,支持多个)
-ipWhitelist = {"127.0.0.1", "192.168.1.1"}
+-- ipWhitelist = {"127.0.0.1", "192.168.1.1"}
+ipWhitelist = {}
 -- IP 黑名单 (命中直接返回 403)
-ipBlocklist = {"1.0.0.1", "8.8.8.8"}
+-- ipBlocklist = {"1.0.0.1", "8.8.8.8"}
+ipBlocklist = {}
 -- CC 频率限制 (格式: 最大请求数/秒数)
 -- 示例 "300/60" 表示 60秒内同一个 IP 访问同一个 URL 超过 300 次则拦截
 cc_rate = "30/10"
