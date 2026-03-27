@@ -27,11 +27,6 @@ javascript\s*:
 \$_(GET|POST|COOKIE|FILES|SESSION|ENV|SERVER|GLOBALS)\[
 # --- 协议伪造与 SSRF ---
 (gopher|doc|php|glob|file|phar|zlib|ftp|ldap|dict|ogg|data)\://
-# SSRF 内网地址检测
-http://(127\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)
-http://localhost
-http://0\.0\.0\.0
-http://\[::1\]
 # --- 信息泄露 ---
 \bfrom\W+information_schema\W
 \b(current_user|database|schema|connection_id|version|user)\s*\(

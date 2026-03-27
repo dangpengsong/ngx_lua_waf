@@ -234,19 +234,16 @@ end
 function check_headers()
     local headers = ngx.req.get_headers()
     if not headers or not rules.args then return false end
-    -- 需要特别检测的头部（Log4j JNDI 等攻击常通过这些头部注入）
-    local sensitive_headers = {
-        "user-agent", "referer", "x-forwarded-for", "x-real-ip",
-        "x-api-version", "x-requested-with", "accept-language",
-        "authorization", "cookie", "origin"
-    }
     for key, val in pairs(headers) do
-        local data = type(val) == "table" and table.concat(val, " ") or val
-        if data and type(data) == "string" then
-            local norm_data = normalize_input(data)
-            for _, rule in ipairs(rules.args) do
-                if ngx_find(norm_data, rule, "isjo") then
-                    return do_action('HEADER', ngx.var.request_uri, data, "Header Attack: " .. key)
+        local lower_key = string.lower(key)
+        if lower_key ~= "user-agent" and lower_key ~= "referer" and lower_key ~= "cookie" then
+            local data = type(val) == "table" and table.concat(val, " ") or val
+            if data and type(data) == "string" then
+                local norm_data = normalize_input(data)
+                for _, rule in ipairs(rules.args) do
+                    if ngx_find(norm_data, rule, "isjo") then
+                        return do_action('HEADER', ngx.var.request_uri, data, "Header Attack: " .. key)
+                    end
                 end
             end
         end
