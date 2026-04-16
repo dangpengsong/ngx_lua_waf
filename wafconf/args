@@ -1,62 +1,49 @@
-# --- 遍历与路径攻击 ---
-\.\./
-etc/(passwd|shadow|group|hosts)
-# --- SQL 注入优化 (增加单词边界 \b 防止误报) ---
-\b(select|insert|update|delete|drop|alter|truncate|create)\b.+\b(from|into|table|database|limit)\b
-\bunion\b.*\bselect\b
-\bhaving\b\s+(1=1|1=2)
-\b(order|group)\s+by\b.+\(
-\bextractvalue|updatexml\b
-# 简化版 UNION SELECT
-\bunion\s+select\b
-# 单引号 + UNION
-'\s*union\s
-# --- 盲注与延时攻击 ---
-\bsleep\(\d+\)
-\bbenchmark\([\d\w\s\,]+\)
-\bwaitfor\b\s+delay\b
-# --- 跨站脚本 XSS (增强型) ---
-<(iframe|script|body|img|layer|div|meta|style|base|object|input|svg|details|video|audio|embed|form)
-\bon\w+\s*=
-javascript\s*:
-# img 标签事件
-<img[^>]+on\w+\s*=
-# --- 远程代码执行 RCE ---
-\b(base64_decode|eval|system|passthru|shell_exec|exec|phpinfo|popen|assert|preg_replace)\b\s*\(
-\b(file_get_contents|include|require|require_once|file_put_contents)\b\s*\(
-\$_(GET|POST|COOKIE|FILES|SESSION|ENV|SERVER|GLOBALS)\[
-# --- 协议伪造与 SSRF ---
-(gopher|doc|php|glob|file|phar|zlib|ftp|ldap|dict|ogg|data)\://
-# SSRF 内网地址检测
-http://(127\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)
-http://localhost
-http://0\.0\.0\.0
-http://\[::1\]
-# --- 信息泄露 ---
-\bfrom\W+information_schema\W
-\b(current_user|database|schema|connection_id|version|user)\s*\(
-# --- Java 反序列化与 Struts2 漏洞 ---
-\bxwork\.MethodAccessor
-java\.lang\.(Runtime|ProcessBuilder)
-# --- Log4j JNDI 注入 (CVE-2021-44228) ---
-\$\{.*jndi\s*:
-\$\{.*ldap\s*:
-\$\{.*rmi\s*:
-\$\{.*dns\s*:
-\$\{.*iiop\s*:
-# Log4j 变形绕过
-\$\{.*\$\{.*lower.*\}.*\}
-\$\{.*env\s*:
-\$\{.*sys\s*:
-# --- 十六进制编码绕过 ---
-0x[0-9a-fA-F]{8,}
-# --- 命令注入 ---
-[;|`]\s*(cat|ls|id|whoami|pwd|uname|wget|curl|nc|bash|sh)\b
+# --- 路径遍历与系统敏感文件 ---
+# 匹配 ../ 或 ..\ 及其编码,确保在路径起始或分隔处匹配
+\.\.\/
+%2e%2e%2f
+\b/etc/(passwd|shadow|hosts|hostname|fstab)\b
+
+# --- SQL 注入 ---
+# 组合词拦截:必须包含 select...from 等结构,防止误杀正常的单词
+\b(select|insert|update|delete|drop|truncate)\b.+\b(from|into|table|where)\b
+\bunion\s+(all\s+)?select\b
+# 报错与延时注入函数精匹配
+\b(extractvalue|updatexml|sleep|benchmark|if|floor|rand)\s*\(
+# 逻辑注入:优化 1=1 匹配,使用反向引用 \2 确保等号两端一致
+\s+(and|or)\s+(['"]?\w+['"]?)\s*=\s*(\2|\d+)
+
+# --- 跨站脚本 XSS ---
+<(iframe|script|object|embed|svg|details)\b
+# 伪协议
+(?i)(javascript|vbscript|expression)\s*:
+
+# --- SSRF 防御 (保护 Redis/InfluxDB 端口) ---
+# 拦截尝试访问内网 IP 的行为 (针对 SSRF 漏洞)
+(?i)http://(127\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|localhost|0\.0\.0\.0)
+
+# --- PHP 序列化与代码执行 ---
+# PHP 原生序列化特征拦截 (Cookie 常用序列化存储 Session)
+\b[OaCs]:\d+:"[^"]+":\d+:\{
+# PHP 危险函数执行
+\b(eval|system|passthru|shell_exec|exec|phpinfo|popen|assert|preg_replace|create_function)\b\s*\(
+\b(file_get_contents|include(_once)?|require(_once)?|file_put_contents|parse_ini_file)\b\s*\(
+# 拦截针对 PHP 超全局变量的篡改
+\b\$_(GET|POST|COOKIE|FILES|SESSION|ENV|SERVER|GLOBALS)\[
+
+# --- 命令注入 (Debian/Linux 环境) ---
+# 匹配连接符后紧跟敏感命令
+[;|`|&|$]\s*\b(cat|id|whoami|uname|wget|curl|bash|sh|php|python)\b
+# 针对 Debian 系统路径的读取行为
 \b(cat|head|tail|more|less)\s+/etc/
-# 命令执行特征
-;\s*\w+\s+/
-# --- 环境变量注入 ---
-\benv\s*&&
-\bset\s*&&
-\benv\b.*\bcat\b
-&&\s*(cat|ls|id|whoami|wget|curl)
+
+# --- Log4j / JNDI (防御后端潜在隐患) ---
+\$\{(jndi|ctx|env|sys|main|sd|java|lower|upper)\s*:
+# Shellshock 漏洞拦截 (Debian 常用 Bash)
+\(\)\s*\{\s*:;\s*\}\s*;
+
+# --- 编码与十六进制绕过 ---
+# 拦截过长的十六进制串(可能是二进制木马)
+\b0x[0-9a-fA-F]{12,}\b
+# Unicode 转义
+(%u[0-9a-fA-F]{4})

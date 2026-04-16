@@ -1,22 +1,30 @@
-# --- 自动化漏洞扫描器 (加固并补充) ---
-\b(sqlmap|nmap|nikto|w3af|netsparker|hydra|dirbuster|pangolin|havij|fimap|owasp|acunetix|zmeu|nessus|openvas|burpsuite|vega|masscan|zmap|gobuster|ffuf|wfuzz|nuclei|xray|afrog)\b
-# --- 自动化脚本库 (防止恶意脚本抓取/发包) ---
-\b(libwww|PycURL|python-requests|aiohttp|go-http-client|java/|faraday|httperf|bench|curl/|wget/|http_request|php/|ruby|perl|got/|axios|node-fetch|scrapy|mechanize|httpx)\b
-# --- 爬虫与镜像工具 ---
-\b(HTTrack|harvest|audit|BBBike|webmeup|spiderman|heritrix|teleport|webcopier|siteSucker|webzip)\b
-# --- 常见的后门与恶意指纹 ---
-\b(BabyKrokodil|morfeus|shell|cgi-bin|sh|bash|powershell|webshell)\b
-# --- 现代 Headless 浏览器 (针对自动化爬虫) ---
-\b(headless|selenium|webdriver|playwright|puppeteer|phantomjs|nightmare|zombie)\b
-# --- 空 UA 或异常短 UA ---
-^.{0,10}$
-# --- 特殊特征匹配 ---
--scan
-\bSF/
-\bParser\b
-# --- AI/机器人特征 ---
-\b(bot|crawl|spider|slurp)\b.*\b(evil|bad|attack)\b
-# --- Log4j JNDI 注入 (UA头注入) ---
-\$\{.*jndi\s*:
-\$\{.*ldap\s*:
-\$\{.*rmi\s*:
+# --- 专业自动化漏洞扫描器 ---
+# 拦截已知的黑客工具指纹，这些 UA 几乎不可能是正常用户
+(?i)\b(sqlmap|nmap|nikto|netsparker|havij|acunetix|zmeu|nessus|openvas|vega|masscan|zmap|gobuster|ffuf|wfuzz|nuclei|xray|afrog|censys|zgrab|wpscan|commix)\b
+
+# --- 自动化脚本库与编程框架 ---
+# 拦截常见的编程语言默认 UA。注意：如果你的业务有合法的 API 调用，请移除对应的项（如 curl 或 python）
+(?i)\b(libwww|PycURL|python-requests|aiohttp|go-http-client|java/|faraday|http_request|php/|got/|axios|node-fetch|scrapy|mechanize|httpx|rest-client)\b
+# 独立拦截简陋的下载工具名
+(?i)\b(wget|curl)\b
+
+# --- 恶意后门、无头浏览器与指纹 ---
+# 拦截常用于扫描的无头浏览器指纹及特定攻击指纹
+(?i)\b(headless|selenium|webdriver|playwright|puppeteer|phantomjs|zombie|BabyKrokodil|morfeus|HNAP1|CMS-Checker)\b
+
+# --- 异常 UA 处理 (极低误报优化) ---
+# 拦截 UA 完全为空的情况
+^-
+# 拦截只有 1-3 位字符的极短 UA（正常浏览器不会这么短）
+^[a-zA-Z0-9]{1,3}$
+
+# --- 注入特征 ---
+# 在 UA 中尝试 Log4j 注入也是扫描器的常用手段
+(?i)\$\{(jndi|ctx|env|sys|java)\s*:
+# 拦截 UA 中的十六进制/Unicode 异常编码
+(?i)(%u[0-9a-f]{4})
+(?i)(\\x[0-9a-f]{2})
+
+# --- 组合恶意特征 ---
+# 拦截带有攻击倾向词汇的爬虫
+(?i)\b(bot|crawl|spider)\b.*\b(evil|attack|vuln)\b
