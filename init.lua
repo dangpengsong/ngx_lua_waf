@@ -236,7 +236,7 @@ function check_headers()
     if not headers or not rules.args then return false end
     for key, val in pairs(headers) do
         local lower_key = string.lower(key)
-        if lower_key ~= "user-agent" and lower_key ~= "referer" and lower_key ~= "cookie" then
+        if lower_key ~= "user-agent" and lower_key ~= "referer" and lower_key ~= "cookie" and lower_key ~= "origin" then
             local data = type(val) == "table" and table.concat(val, " ") or val
             if data and type(data) == "string" then
                 local norm_data = normalize_input(data)

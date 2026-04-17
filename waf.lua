@@ -59,7 +59,7 @@ local function waf_check()
             local total_len = content_length
             local size, file_found, is_image = 0, false, false
             local chunk_size_limit = 4096
-
+            
             while size < total_len do
                 local chunk_size = min(chunk_size_limit, total_len - size)
                 local data, _, partial = sock:receive(chunk_size)
