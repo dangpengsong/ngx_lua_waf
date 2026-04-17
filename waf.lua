@@ -57,7 +57,7 @@ local function waf_check()
             if not sock then return "pass", "No Socket" end
             req.init_body(128 * 1024)
             local total_len = content_length
-            local size, file_found = 0, false
+            local size, file_found, is_image = 0, false, false
             local chunk_size_limit = 4096
             
             while size < total_len do
@@ -67,16 +67,31 @@ local function waf_check()
                 if not data then break end
                 req.append_body(data)
                 size = size + #data
-                -- 正文注入检测
-                if check_body(data) then return "block", "Multipart Body" end
-                -- 文件后缀检测状态机
                 if not file_found then
+                    -- 检测是否包含文件及后缀是否合法,是否为图片
                     local ext = match(data, [[filename=".-%.([^%.%s"]+)"]]) or
                                 match(data, [[filename='.-%.([^%.%s']+)']]) or
                                 match(data, [[filename=.-%.([^%.%s;]+)]])
                     if ext then
-                        if check_file_ext(ext) then return "block", "File Ext" end
                         file_found = true
+                        -- 拦截黑名单后缀
+                        if check_file_ext(ext) then return "block", "File Ext" end
+                        -- 判断是否为图片
+                        local low_ext = string.lower(ext)
+                        if low_ext == "jpg" or low_ext == "jpeg" or low_ext == "png" or low_ext == "gif" or low_ext == "webp" then
+                            is_image = true
+                        end
+                    end
+                    -- 非图片文件执行检测
+                    if not is_image then
+                        -- 正文注入检测
+                        if check_body(data) then return "block", "Multipart Body" end
+                    end
+                else
+                    -- 非图片文件执行检测
+                    if not is_image then
+                        -- 正文注入检测
+                        if check_body(data) then return "block", "Multipart Body" end
                     end
                 end
             end

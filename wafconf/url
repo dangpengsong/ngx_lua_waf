@@ -1,6 +1,6 @@
 # --- 源码管理与隐藏文件 ---
 # 移除了 vscode, npm 等本地开发工具特征，保留服务器核心敏感项
-(?i)\.(git|svn|htaccess|bash_history|DS_Store|env|ssh|well-known)\b
+(?i)\.(git|svn|htaccess|bash_history|DS_Store|env|ssh)\b
 
 # --- 敏感备份与配置文件 (优化结尾匹配) ---
 # 拦截整站备份扫描：优化路径名，防止误杀包含 'new' 或 'api' 的正常路径
