@@ -1,54 +1,68 @@
-# --- 1. SQL 注入加固 (针对 POST 表单和 JSON 载荷) ---
-\b(select|insert|update|delete|drop|alter|truncate|create)\b.+\b(from|into|table|database|limit)\b
-\bunion\b.*\bselect\b
-\bextractvalue|updatexml\b
-\b(order|group)\s+by\b.+\(
-\binto\s+(dump|out)file\b
-\bfrom\W+information_schema\W
-\b(current_user|database|schema|connection_id|version|user)\s*\(
-# 针对十六进制绕过
-\b0x[0-9a-fA-F]{2,}\b
-# --- 2. 代码执行 (RCE) 与 Web Shell 特征 (重点补充) ---
-# PHP 危险函数
-\b(eval|assert|system|passthru|shell_exec|exec|phpinfo|popen|preg_replace|base64_decode)\b\s*\(
-\b(file_get_contents|include|require|require_once|file_put_contents|fopen|readfile)\b\s*\(
-# 变量覆盖与全局变量攻击
-\$_(GET|POST|COOKIE|FILES|SESSION|ENV|SERVER|GLOBALS)\[
-# Java/Python/Lua 远程执行特征
-\b(java\.lang|Runtime\.getRuntime|ProcessBuilder|subprocess\.Popen|os\.execute|io\.popen)\b
-# 反序列化 Payload 常见起始特征 (如 O:8:"ClassName")
-[acsO]:\d+:"
-# PHP Phar 反序列化
-phar://
-# --- 3. 敏感文件读取与目录遍历 ---
-\.\./
-\betc/(passwd|shadow|group|hosts)\b
-# 针对 Windows 敏感路径
-\b(boot\.ini|windows/win\.ini|windows/system32/config)\b
-# --- 4. 跨站脚本 (XSS) 增强 ---
-<(iframe|script|body|img|layer|div|meta|style|base|object|input|svg|details|video|audio)
-\bon\w+\s*=
-# 编码类绕过
-\b(expression|javascript|vbscript)\s*:
-# --- 5. Struts2/Log4j 等框架漏洞 (维持并补全) ---
-\$\{.*?\b(jndi|ognl|context)\b.*?\}
-xwork\.MethodAccessor
-java\.lang\.runtime
-# --- Log4j JNDI 注入 (CVE-2021-44228) ---
-\$\{.*jndi\s*:
-\$\{.*ldap\s*:
-\$\{.*rmi\s*:
-\$\{.*dns\s*:
-\$\{.*env\s*:
-\$\{.*sys\s*:
-\$\{.*lower.*\}
-\$\{.*upper.*\}
-# --- 6. 协议伪造与 SSRF ---
-(gopher|doc|php|glob|file|phar|zlib|ftp|ldap|dict|ogg|data)\://
-# SSRF 内网地址
-http://(127\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)
-http://localhost
-# --- 7. 命令注入 ---
-[;|`]\s*(cat|ls|id|whoami|pwd|uname|wget|curl|nc|bash|sh)\b
+# --- 路径遍历与系统敏感文件 ---
+# 匹配 ../ 或 ..\ 及其编码,确保在路径起始或分隔处匹配
+\.\.\/
+%2e%2e%2f
+\b/etc/(passwd|shadow|hosts|hostname|fstab)\b
+
+# --- SQL 注入 ---
+# 组合词拦截:必须包含 select...from 等结构,防止误杀正常的单词
+\b(select|insert|update|delete|drop|truncate)\b.+\b(from|into|table|where)\b
+\bunion\s+(all\s+)?select\b
+# 报错与延时注入函数精匹配
+\b(extractvalue|updatexml|sleep|benchmark|if|floor|rand)\s*\(
+# 逻辑注入:优化 1=1 匹配,使用反向引用 \2 确保等号两端一致
+\s+(and|or)\s+(['"]?\w+['"]?)\s*=\s*(\2|\d+)
+
+# --- 跨站脚本 XSS ---
+<(iframe|script|object|embed|svg|details)\b
+# 伪协议
+(?i)(javascript|vbscript|expression)\s*:
+
+# --- SSRF 防御 (保护 Redis/InfluxDB 端口) ---
+# 拦截尝试访问内网 IP 的行为 (针对 SSRF 漏洞)
+(?i)http://(127\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|localhost|0\.0\.0\.0)
+
+# --- PHP 序列化与代码执行 ---
+# PHP 原生序列化特征拦截 (Cookie 常用序列化存储 Session)
+\b[OaCs]:\d+:"[^"]+":\d+:\{
+# PHP 危险函数执行
+\b(eval|system|passthru|shell_exec|exec|phpinfo|popen|assert|preg_replace|create_function)\b\s*\(
+\b(file_get_contents|include(_once)?|require(_once)?|file_put_contents|parse_ini_file)\b\s*\(
+# 拦截针对 PHP 超全局变量的篡改
+\b\$_(GET|POST|COOKIE|FILES|SESSION|ENV|SERVER|GLOBALS)\[
+
+# 拦截常见的 WebShell 关键特征
+(?i)(eval|assert|passthru|shell_exec|system|base64_decode)\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)
+
+# --- JSON 中的 PHP 代码注入 (针对 unserialize 或 eval) ---
+# 拦截在 JSON 值中植入 PHP 序列化对象特征
+(?i)":\s*"[OaCs]:\d+:\\"[^\\"]+\\":\d+:\{"
+
+# --- JSON 中的路径遍历 (针对文件包含漏洞) ---
+# 拦截类似 {"file": "../../../etc/passwd"}
+(?i)":\s*"[^"]*?\.\.\/\.\.\/"
+
+# --- JSON 中的 SQL 联合查询 (针对 API 注入) ---
+# 拦截 {"id": "1' union select..."}
+(?i)":\s*"[^"]*?\bunion\b\s+select\b"
+
+# --- JSON 中的命令注入 (针对 RCE) ---
+# 拦截 {"cmd": "; id; "} 或 {"name": "`whoami`"}
+(?i)":\s*"[^"]*?[;|`|&|$]\s*\b(whoami|id|cat|bash|curl|wget)\b"
+
+# --- 命令注入 (Debian/Linux 环境) ---
+# 匹配连接符后紧跟敏感命令
+[;|`|&|$]\s*\b(cat|id|whoami|uname|wget|curl|bash|sh|php|python)\b
+# 针对 Debian 系统路径的读取行为
 \b(cat|head|tail|more|less)\s+/etc/
-\benv\s*&&
+
+# --- Log4j / JNDI (防御后端潜在隐患) ---
+\$\{(jndi|ctx|env|sys|main|sd|java|lower|upper)\s*:
+# Shellshock 漏洞拦截 (Debian 常用 Bash)
+\(\)\s*\{\s*:;\s*\}\s*;
+
+# --- 编码与十六进制绕过 ---
+# 拦截过长的十六进制串(可能是二进制木马)
+\b0x[0-9a-fA-F]{12,}\b
+# Unicode 转义
+(%u[0-9a-fA-F]{4})

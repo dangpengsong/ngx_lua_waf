@@ -10,3 +10,4 @@
 # --- 常见 API 白名单示例 (根据实际业务按需开启) ---
 # ^/api/v1/public/
 # ^/api/webhook/
+^/api.huafanyun.com/app/admin

@@ -1,21 +1,35 @@
-# --- 1. 源码管理与系统隐藏文件 ---
-\.(git|svn|hg|bzr|htaccess|bash_history|DS_Store|env)\b
-# --- 2. 敏感备份,数据库与配置文件 (整合完善) ---
-\.(bak|inc|old|mdb|sql|backup|java|class|ini|log|tmp)$
-# 拦截针对整站备份的扫描 (如 www.rar, site.zip)
-\b(vhost|bbs|host|wwwroot|www|site|root|hytop|flashfxp|web|data)\b.*\.rar
-\b(vhost|bbs|host|wwwroot|www|site|root|hytop|flashfxp|web|data)\b.*\.zip
-# --- 3. 静态资源目录下的脚本执行 (核心加固:防止上传漏洞后的执行) ---
-/(attachments|upimg|images|css|uploadfiles|html|uploads|templets|static|template|data|inc|forumdata|upload|includes|cache|avatar)/.+\.(php|jsp|asp|aspx|cgi|sh|py)
-# --- 4. 常见后端管理端点与 Spring Boot 泄露 ---
-\b(phpmyadmin|pma|jmx-console|jmxinvokerservlet|actuator|configprops|heapdump|env|loggers)\b
-\b(web-inf|meta-inf|invoker)\b
-# --- 5. SQL 注入与命令注入 (路径参数) ---
-\b(extractvalue|updatexml|sleep|benchmark)\b
-\b(cmd|shell|sh|bash|powershell)\.(php|jsp|asp)\b
-# --- 6. 协议伪造与代码特征 ---
-(gopher|doc|php|glob|file|phar|zlib|ftp|ldap|dict|ogg|data)\://
-java\.lang
-# --- 7. 畸形字符与编码绕过 ---
-# 注意：只拦截明显的攻击特征，避免对正常URL误报
-\x[0-9a-fA-F]{2}
+# --- 源码管理与隐藏文件 ---
+# 移除了 vscode, npm 等本地开发工具特征，保留服务器核心敏感项
+(?i)\.(git|svn|htaccess|bash_history|DS_Store|env|ssh)\b
+
+# --- 敏感备份与配置文件 (优化结尾匹配) ---
+# 拦截整站备份扫描：优化路径名，防止误杀包含 'new' 或 'api' 的正常路径
+(?i)\b(wwwroot|www|site|backup|database|db_backup)\.(rar|zip|tar\.gz|7z|sql|bak)
+
+# --- 静态资源目录防执行 (核心防护) ---
+# 拦截在上传或静态目录下运行 PHP 脚本。去掉了 jsp/asp 等不相关后缀
+(?i)/(attachments|images|uploads|static|public|data|tmp|cache|avatar)/.+\.php
+
+# --- 管理端点与中间件 ---
+(?i)\b(phpmyadmin|pma|webui|adminhome|geoserver|swagger-ui|api-docs)\b
+# 保护 OpenResty 可能涉及的 Web-INF 目录
+(?i)\b(WEB-INF|META-INF)\b
+
+# --- 路径中的代码特征与木马文件名 ---
+# 拦截 URL 路径里直接出现的 SQL 注入函数名
+(?i)\b(extractvalue|updatexml|sleep|benchmark|pg_sleep)\b
+# 拦截典型的 WebShell 文件名
+(?i)\b(webshell|w00t|muma|shell|cmd)\.php\b
+
+# --- 协议伪造与 SSRF (针对 Redis/InfluxDB 防护) ---
+# 拦截敏感协议，特别是 phar(PHP反序列化) 和 gopher(SSRF攻击Redis)
+(?i)(gopher|php|glob|file|phar|ftp|ldap|dict|data|expect)\://
+
+# --- 编码绕过、特殊字符与路径穿越 ---
+# 目录穿越 (核心拦截)
+\.\./
+# 拦截 URL 中的十六进制和 Unicode 注入特征
+(?i)(%u[0-9a-f]{4})
+(?i)(\\x[0-9a-f]{2})
+# 拦截异常的双引号 %22
+%22
