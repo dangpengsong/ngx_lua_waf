@@ -70,8 +70,11 @@ local function write_log(method, url, data, rule_tag)
     local ip      = get_client_ip()
     local host    = ngx.var.server_name or "localhost"
     local time    = ngx.localtime()
+    local today   = ngx.today()
     local ua      = ngx.var.http_user_agent or "-"
-    local log_file = fmt("%s/%s_%s_sec.log", log_path, host, ngx.today())
+    local filename = fmt("%s_%s_sec.log", host, today)
+    local log_file = fmt("%s/%s", log_path, filename)
+    local symlink  = fmt("%s/current_sec.log", log_path) -- 固定軟連結名稱
     local message  = fmt("%s [%s] %s %s%s \"%s\" \"%s\" \"%s\"\n",
                          ip, time, method, host, url, data, rule_tag, ua)
     ngx.timer.at(0, function(premature)
@@ -80,6 +83,11 @@ local function write_log(method, url, data, rule_tag)
         if fd then
             fd:write(message)
             fd:close()
+            local is_windows = package.config:sub(1,1) == "\\"
+            if not is_windows then
+                local cmd = fmt("ln -snf %s %s", log_file, symlink)
+                os.execute(cmd)
+            end
         else
             ngx.log(ngx.ERR, "WAF log write failed: ", err)
         end
